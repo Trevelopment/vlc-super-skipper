@@ -9,13 +9,15 @@
 -- Profiles are saved in: ~/.config/vlc/super-skipper.conf
 --]]
 
+skipper_ver = "1.1.0" -- Super Skipper Version
 intf_script = "skipper_intf" -- Location: \lua\intf\skipper_intf.lua
 listwidth = 7 -- dialog table width,  min  4 to max 40
 listheight = 35 -- dialog table height, min 10 to max 70
+time_format = "s" -- Time format, s = seconds, h = hh:mm:ss
 function descriptor()
   return {
     title = "Super Skipper",
-    version = "1.0.0",
+    version = skipper_ver,
     author = "Trevor Martin",
     url = "https://github.com/Trevelopment/vlc-super-skipper",
     shortdesc = "Super Skipper",
@@ -31,7 +33,9 @@ function activate()
     if (file_exists(config_file)) then
       load_all_profiles()
     end
-  open_dialog()
+
+    local VLC_extraintf, VLC_luaintf, t, ti = VLC_intf_settings()
+    if not ti or VLC_luaintf~=intf_script then trigger_menu(2) else trigger_menu(1) end
 end
 
 function deactivate()
@@ -84,26 +88,31 @@ function open_dialog()
   dlg:add_button("or Artist:", get_playing_artist, 2, 5, 1, 1)
   profile_name_input = dlg:add_text_input("", 3, 5, 2, 1)
 
-  dlg:add_button("Opening Start (s):", fill_open_start, 1, 7, 2, 1)
+  time_label = dlg:add_label("<center><h4>Time Format: Seconds</h4></center>" , 1, 6, 4, 1)
+
+  dlg:add_button("Opening Start:", fill_open_start, 1, 7, 2, 1)
   opening_start_time_input = dlg:add_text_input("", 3, 7, 1, 1)
   check_beg = dlg:add_check_box("From Start", false, 4, 7, 1, 1)
 
-  dlg:add_button("Opening Stop (s):", fill_open_stop, 1, 8, 2, 1)
+  dlg:add_button("Opening Stop:", fill_open_stop, 1, 8, 2, 1)
   opening_stop_time_input = dlg:add_text_input("", 3, 8, 2, 1)
 
-  dlg:add_label("", 1, 9, 2, 1)
+  dlg:add_label("", 1, 9, 4, 1)
 
-  dlg:add_button("Ending Start (s):", fill_end_start, 1, 10, 2, 1)
+  dlg:add_button("Ending Start:", fill_end_start, 1, 10, 2, 1)
   ending_start_time_input = dlg:add_text_input("", 3, 10, 2, 1)
 
-  dlg:add_button("Ending Stop (s):", fill_end_stop, 1, 11, 2, 1)
+  dlg:add_button("Ending Stop:", fill_end_stop, 1, 11, 2, 1)
   ending_stop_time_input = dlg:add_text_input("", 3, 11, 1, 1)
   check_end = dlg:add_check_box("To End", false, 4, 11, 1, 1)
 
   dlg:add_button("Save", save_profile, 1, 12, 2, 1)
   dlg:add_button("Save for Current", save_for_current, 3, 12, 2, 1)
 
-  bt_settings = dlg:add_button("Set Interface", click_settings, 1, 14, 2, 1)
+  dlg:add_label("", 1, 13, 4, 1)
+
+  bt_settings = dlg:add_button("Set Interface", click_settings, 1, 14, 1, 1)
+  bt_settings = dlg:add_button("Time Fomat", click_time_format, 2, 14, 1, 1)
   bt_help = dlg:add_button("Help", click_HELP, 3, 14, 2, 1)
   ----------------------- TODO: LIST DIALOG -----------------------------
   -- bt_list = dlg:add_button("Profile List", click_list, 2, 14, 1, 1)
@@ -143,7 +152,9 @@ function clear_profile()
 end
 
 function get_curr_time()
-  return math.floor(vlc.var.get(vlc.object.input(), "time") / 1000000)
+  local curr_time = math.floor(vlc.var.get(vlc.object.input(), "time") / 1000000)
+  if time_format == "h" then curr_time = hhmmss(curr_time) end
+  return curr_time
 end
 
 function populate_profile_dropdown()
@@ -164,7 +175,8 @@ function populate_profile_fields()
     ending_start_time_input:set_text(profile.ending_start_time)
     ending_stop_time_input:set_text(profile.ending_stop_time)
     check_beg:set_checked(tonumber(profile.opening_start_time) == 0)
-    check_end:set_checked(tonumber(profile.ending_stop_time) == 99999)
+    check_end:set_checked(tonumber(profile.ending_stop_time) == 3599999)
+    if time_format == "h" then format_time(time_format) end
   end
 end
 
@@ -181,6 +193,8 @@ function save_profile()
   if profile_name_input:get_text() == "" then
     return
   end
+  local hhmmss_format = time_format == "h" -- Save bool to convert back to h format
+  if hhmmss_format then format_time("s") end -- Convert to s format berfore saving
   if opening_start_time_input:get_text() == "" or check_beg:get_checked() then
     opening_start_time_input:set_text("0")
   end
@@ -194,7 +208,7 @@ function save_profile()
     ending_stop_time_input:set_text("0")
   end
   if check_end:get_checked() then
-    ending_stop_time_input:set_text("99999")
+    ending_stop_time_input:set_text("3599999") -- Maximum value in hhmmss format (99:59:59)
   end
   local updated_existing = false
 
@@ -217,7 +231,7 @@ function save_profile()
       ending_stop_time = tonumber(ending_stop_time_input:get_text())
     })
   end
-
+  if hhmmss_format then format_time("h") end -- Convert back to hhmmss format
   save_all_profiles()
 end
 
@@ -234,6 +248,33 @@ function get_playing_artist()
   profile_name_input:set_text(vlc.input.item():metas().artist)
 end
 
+function click_time_format()
+  if time_format == "s" then
+    format_time("h")
+  else
+    format_time("s")
+  end
+end
+
+function format_time(format)
+  dlg:del_widget(time_label)
+  if format == "h" then
+    opening_start_time_input:set_text(hhmmss(opening_start_time_input:get_text()))
+    opening_stop_time_input:set_text(hhmmss(opening_stop_time_input:get_text()))
+    ending_start_time_input:set_text(hhmmss(ending_start_time_input:get_text()))
+    ending_stop_time_input:set_text(hhmmss(ending_stop_time_input:get_text()))
+    time_label = dlg:add_label("<center><h4>Time Format: HH:MM:SS</h4></center>" , 1, 6, 4, 1)
+  else
+    opening_start_time_input:set_text(secs(opening_start_time_input:get_text()))
+    opening_stop_time_input:set_text(secs(opening_stop_time_input:get_text()))
+    ending_start_time_input:set_text(secs(ending_start_time_input:get_text()))
+    ending_stop_time_input:set_text(secs(ending_stop_time_input:get_text()))
+    time_label = dlg:add_label("<center><h4>Time Format: Seconds</h4></center>" , 1, 6, 4, 1)
+  end
+  time_format = format
+  dlg:update()
+end
+
 function click_mainmenu()
   trigger_menu(1)
 end
@@ -244,6 +285,51 @@ end
 
 function click_list()
   trigger_menu(3)
+end
+
+-----------------  UTIL  ------------------------
+
+function secs(hhmmss)            -- "hh:mm:ss" to secs
+    local hms, h, m, s, n, i
+    hms = hhmmss    -- ok, let's do some generous error checking
+    hms = string.gsub(hms,"[:;,.-/ ]","") -- remove time dividers
+    n = string.len(hms)
+    if n < 6 then hms = string.sub("000000"..hms, -6, -1) end
+    if string.len(hms) ~= 6 then return 0 end -- oops
+    h = integer(string.sub(hms,1,2))
+    m = integer(string.sub(hms,3,4))
+    s = integer(string.sub(hms,5,6))
+    if h<0 or m<0 or s<0 then return 0 end          -- oops
+    return s + m*60 + h*3600
+end
+
+function hhmmss(secs) -- secs to "hh:mm:ss"
+    local seconds = integer(secs)
+    if seconds < 0  then return "00:00:00" end      -- oops
+    if seconds > 359999 then return "99:59:59" end  -- oops
+    local h = seconds/3600
+    local hh = math.floor(h)
+    local m = (h - hh) * 60
+    local mm = math.floor(m)
+    local s = (m - mm) * 60 + .5
+    local ss = math.floor(s)
+    if hh > 99 then hh = 99 end    -- just in case
+    if hh < 10 then hh = "0"..hh end
+    if mm < 10 then mm = "0"..mm end
+    if ss < 10 then ss = "0"..ss end
+    fhhmmss = hh..":"..mm..":"..ss
+    return fhhmmss
+end
+
+function integer(s)   -- hoping s is integer in string format
+    local num = tonumber(s)
+    if num == nil then num = 0 end
+    num = math.floor(num + .5)  -- ok, round to nearest integer
+    if string.match(tostring(num),"[^-0123456789]") then
+      return 0      -- if not an integer then set to 0
+    else
+      return num
+    end
 end
 
 ------------------------ Settings Dialog -----------------
@@ -332,10 +418,10 @@ function open_list_dialog()
   button_2 = dlg:add_button("<", click_button2, 2, lh + 11, 1, 1)
   button_3 = dlg:add_button(">", click_button3, 3, lh + 11, 1, 1)
   button_4 = dlg:add_button(">>", click_button4, 4, lh + 11, 1, 1)
-  button_5 = dlg:add_button("Sort (A-Z)", click_button5, 1, lh + 12, 1, 1)
-  button_6 = dlg:add_button("Sort (Z-A)", click_button6, 2, lh + 12, 1, 1)
-  button_7 = dlg:add_button("TBD", click_button7, 3, lh + 12, 1, 1)
-  button_8 = dlg:add_button("TBD", click_button8, 4, lh + 12, 1, 1)
+  button_5 = dlg:add_button("Profiles", click_button5, 1, lh + 12, 1, 1)
+  button_6 = dlg:add_button("Sort (A-Z)", click_button6, 2, lh + 12, 1, 1)
+  button_7 = dlg:add_button("Sort (Z-A)", click_button7, 3, lh + 12, 1, 1)
+  bt_help = dlg:add_button("Help", click_HELP, 4, lh + 12, 1, 1)
   -- setdlgmode(setnormal)
   -- there seems to be an issue where a click function is called twice
   -- with a single click. uses lastclicktime to slow the calling process
@@ -426,6 +512,7 @@ end
 
 function click_HELP()
   local config_loc = string.gsub(config_file, '\\', '/')
+  local config_dir = string.gsub(vlc.config.configdir(), '\\', '/')
   local help_text = [[
 <style type="text/css">
 body {background-color:white;}
@@ -439,7 +526,7 @@ body {background-color:white;}
 #footer{background-color:#2AE44F;}
 </style>
 
-<div id=header><b>Super Skipper v 1.0.0</b> is VLC Lua Extension that will skip the opening and ending credits in a media file (or any 2 blocks of time.)</div>
+<div id=header><b>Super Skipper v ]] .. skipper_ver .. [[</b> is VLC Lua Extension that will skip the opening and ending credits in a media file (or any 2 blocks of time.)</div>
 <hr />
 <center><b class=marker_red>&nbsp;Instructions&nbsp;</b></center>
 <center><b class=marker_green>*** Enable the 'skipper_intf' interface in the 'Set Interface' menu.  This only needs to be done if it is not already enabled. Restart VLC. ***</b></center>
@@ -449,7 +536,7 @@ body {background-color:white;}
 3) If Profile equals or is a substring of the <b class=input>name or artist</b> then that profile will be used.<br />
 4) For simplicity all <b class=input>special characters and spaces are stripped before comparing,</b> so profile: <b class=marker_green><code>test123.mp4</code></b> will match to file: <b class=marker_green><code>t e$st1#2@3mp4</code></b><br />
 &nbsp;&nbsp;* Search priority is names first then artist, from top to bottom of list.  Uses first found match.<br />
-&nbsp;&nbsp;* Profiles are saved in: <a href="]] .. config_loc .. [[">]] .. config_loc .. [[</a><br />
+&nbsp;&nbsp;* Profiles are saved in: <kbd><a href="]] .. config_loc .. [[">]] .. config_loc .. [[</a></kbd><br />
 &nbsp;&nbsp;&nbsp;&nbsp;* you can change the order or adjust times in that file.<br />
 <br />
 <center><b class=marker_red>Features</b></center>
@@ -463,6 +550,7 @@ body {background-color:white;}
 * <b class=input>Save:</b> Save profile.<br />
 * <b class=input>Save for Current:</b> Set profile to now playing file name and save.<br />
 * <b class=input>Set Interface:</b> Easily set interface settings.<br />
+* <b class=input>Time Format:</b> Change time format (s) <-> HH:MM:SS.<br />
 * <b class=input>Load:</b> Load selected profile values. <br />
 * <b class=input>Clear:</b> Clear all fields.<br />
 * <b class=input>Delete:</b> Delete Selected Profile.<br />
@@ -474,7 +562,7 @@ TIPS:<br />
 * To disable skipping put 0 for Opening Stop or Ending Stop.<br />
 * New saved profiles are added to the begining of the list, edit order in super-skipper.conf in your VLC config directory.<br />
 * Your VLC config directory location: <br />
-<kbd><a href="]] .. string.gsub(vlc.config.configdir(), '\\', '/') .. [[">]] .. vlc.config.configdir() .. [[</kbd><br />
+<kbd><a href="]] .. config_dir .. [[">]] .. config_dir .. [[</kbd><br />
 </b>
 <hr />
 <div id=footer>

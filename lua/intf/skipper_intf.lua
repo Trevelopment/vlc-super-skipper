@@ -30,6 +30,7 @@ os.setlocale("C", "all") -- fixes numeric locale issue on Mac
 
 -- Global Variables
 VLC_version = vlc.misc.version()
+skipper_ver = "1.1.0" -- Super Skipper Version
 config = {}
 skipper = false
 profile_name = ""
@@ -41,7 +42,7 @@ opening = false
 ending = false
 -- The Main Function Loop
 function Looper()
-  Log("Super Skipper v1.0.0")
+  Log("Super Skipper v" .. skipper_ver)
   local curi = nil
   while true do
     if vlc.volume.get() == -256 then break end -- inspired by syncplay.lua; kills vlc.exe process in Task Manager
